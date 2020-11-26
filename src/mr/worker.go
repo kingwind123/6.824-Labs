@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
+	"time"
 )
 
 //
@@ -17,6 +19,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // use ihash(key) % NReduce to choose the reduce
@@ -38,7 +48,13 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// uncomment to send the Example RPC to the master.
 	// CallExample()
-	RequestTask(mapf, reducef)
+	for {
+		working := RequestTask(mapf, reducef)
+		if !working {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 
 }
 
@@ -58,22 +74,14 @@ func mapTask(mapf func(string, string) []KeyValue, reply *TaskReply) {
 	var kva []KeyValue = mapf(filename, string(content))
 	mapNum := reply.TaskNum
 
-	// create a set for output files
-	var member void
-	set := make(map[int]map[string]void)
-
 	for _, kv := range kva {
 		reduceNum := ihash(kv.Key) % reply.NReduce
-		oname := fmt.Sprintf("mr-%d-%d", mapNum, reduceNum)
-		_, exists := set[reduceNum]
-		if !exists {
-			set[reduceNum] = make(map[string]void)
-		}
-		set[reduceNum][oname] = member
+		oname := fmt.Sprintf("./mr-out/mr-%d-%d", mapNum, reduceNum)
+
 		// If the file doesn't exist, create it, or append to the file
 		f, err := os.OpenFile(oname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("MapTask: cannot open %v", oname)
 		}
 
 		enc := json.NewEncoder(f)
@@ -84,56 +92,103 @@ func mapTask(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		f.Close()
 	}
 
-	rt := FinishTaskArgs{OutFiles: set}
+	rt := FinishTaskArgs{TaskType: "map", TaskNum: mapNum}
 	rp := MasterReply{}
 	call("Master.FinishTask", &rt, &rp)
 }
 
 func reduceTask(reducef func(string, []string) string, reply *TaskReply) {
 	reduceNum := reply.TaskNum
+	mapNum := reply.NMap
+	intermediate := []KeyValue{}
+
+	for i := 0; i < mapNum; i++ {
+		oname := fmt.Sprintf("./mr-out/mr-%d-%d", i, reduceNum)
+		if _, err := os.Stat(oname); err == nil {
+			file, err := os.Open(oname)
+			if err != nil {
+				log.Fatalf("ReduceTask: cannot open %v", oname)
+			}
+			dec := json.NewDecoder(file)
+			for {
+				var kv KeyValue
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				intermediate = append(intermediate, kv)
+			}
+		}
+	}
+
+	sort.Sort(ByKey(intermediate))
+
+	outname := fmt.Sprintf("./mr-out/mr-out-%d", reduceNum)
+	ofile, _ := os.Create(outname)
+
+	//
+	// call Reduce on each distinct key in intermediate[],
+	// and print the result to mr-out-0.
+	//
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := reducef(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+
+	ofile.Close()
+
+	rt := FinishTaskArgs{TaskType: "reduce", TaskNum: reduceNum}
+	rp := MasterReply{}
+	call("Master.FinishTask", &rt, &rp)
+
 }
 
 // Ask master for map task
 func RequestTask(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
+	reducef func(string, []string) string) bool {
 	args := RequestTaskArgs{Free: true}
 	reply := TaskReply{}
 
-	call("Master.AssignTask", &args, &reply)
+	rt := call("Master.AssignTask", &args, &reply)
+	if !rt {
+		return false
+	}
 	fmt.Printf("%+v\n", reply)
+
+	_, err := os.Stat("./mr-out")
+
+	if os.IsNotExist(err) {
+		errDir := os.MkdirAll("./mr-out", 0755)
+		if errDir != nil {
+			log.Fatal(errDir)
+		}
+
+	}
 
 	if reply.TaskType == "map" {
 		mapTask(mapf, &reply)
 	} else if reply.TaskType == "reduce" {
 		reduceTask(reducef, &reply)
+	} else if reply.TaskType == "Finished" {
+		return false
 	}
+	return true
 }
 
 func Finish() {
 
-}
-
-//
-// example function to show how to make an RPC call to the master.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	call("Master.Example", &args, &reply)
-
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
 }
 
 //

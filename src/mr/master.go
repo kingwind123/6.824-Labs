@@ -7,19 +7,23 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 type Master struct {
 	// Your definitions here.
-	nReduce       int
-	mapNum        int
-	reduceNum     int
-	files         []string
-	intermediates map[int]map[string]void
+	mu        sync.Mutex
+	nReduce   int
+	mapNum    int
+	reduceNum int
+	files     []string
+	finished  bool
+	// intermediates map[int][]string
 }
 
 // Your code here -- RPC handlers for the worker to call.
 func (m *Master) AssignTask(args *RequestTaskArgs, reply *TaskReply) error {
+	m.mu.Lock()
 	fmt.Printf("%v\n", m.files)
 	reply.NReduce = m.nReduce
 	if len(m.files) > 0 {
@@ -32,37 +36,26 @@ func (m *Master) AssignTask(args *RequestTaskArgs, reply *TaskReply) error {
 	} else if m.reduceNum < m.nReduce {
 		reply.TaskType = "reduce"
 		reply.TaskNum = m.reduceNum
+		reply.NMap = m.mapNum
 
 		// reply.File = m.intermediates[0]
 		// m.files = m.intermediates[1:]
 		m.reduceNum++
 	} else {
 		reply.TaskType = "Finished"
+		m.finished = true
 	}
+	m.mu.Unlock()
 
 	return nil
 }
 
 func (m *Master) FinishTask(returnVal *FinishTaskArgs, reply *MasterReply) error {
-	for k, v := range returnVal.OutFiles {
-		_, exists := m.intermediates[k]
-		if !exists {
-			m.intermediates[k] = make(map[string]void)
-		}
-		for key, value := range v {
-			m.intermediates[k][key] = value
-		}
-	}
-	return nil
-}
+	if returnVal.TaskType == "map" {
 
-//
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
+	} else {
+
+	}
 	return nil
 }
 
@@ -87,11 +80,9 @@ func (m *Master) server() {
 // if the entire job has finished.
 //
 func (m *Master) Done() bool {
-	ret := false
-
 	// Your code here.
 
-	return ret
+	return m.finished
 }
 
 //
@@ -101,11 +92,12 @@ func (m *Master) Done() bool {
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{
-		nReduce:       nReduce,
-		files:         files,
-		mapNum:        0,
-		reduceNum:     0,
-		intermediates: make(map[int]map[string]void),
+		nReduce:   nReduce,
+		files:     files,
+		mapNum:    0,
+		reduceNum: 0,
+		// intermediates: make(map[int]map[string]void),
+		finished: false,
 	}
 
 	// Your code here.
