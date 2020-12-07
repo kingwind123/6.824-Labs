@@ -8,42 +8,64 @@ import (
 	"net/rpc"
 	"os"
 	"sync"
+	"time"
+)
+
+const (
+	MaxTaskRuntime = 5 * time.Second
 )
 
 type Master struct {
 	// Your definitions here.
-	mu        sync.Mutex
-	nReduce   int
-	mapNum    int
-	reduceNum int
-	files     []string
-	finished  bool
+	mu      sync.Mutex
+	nReduce int // should be 10 for this lab
+
+	mapNum    []int // map task index, 0: unassigned, 1: assigned, 2: finished
+	reduceNum []int // redue task index
+
+	mapTime    []time.Time
+	reduceTime []time.Time
+
+	files          []string // all files for processing
+	mapFinished    bool
+	reduceFinished bool
 	// intermediates map[int][]string
 }
 
 // Your code here -- RPC handlers for the worker to call.
 func (m *Master) AssignTask(args *RequestTaskArgs, reply *TaskReply) error {
 	m.mu.Lock()
-	fmt.Printf("%v\n", m.files)
+	// fmt.Printf("%v\n", m.files)
 	reply.NReduce = m.nReduce
-	if len(m.files) > 0 {
-		reply.TaskType = "map"
-		reply.TaskNum = m.mapNum
-		m.mapNum++
-
-		reply.File = m.files[0]
-		m.files = m.files[1:]
-	} else if m.reduceNum < m.nReduce {
-		reply.TaskType = "reduce"
-		reply.TaskNum = m.reduceNum
-		reply.NMap = m.mapNum
-
-		// reply.File = m.intermediates[0]
-		// m.files = m.intermediates[1:]
-		m.reduceNum++
+	reply.NMap = len(m.files)
+	if !m.mapFinished {
+		reply.TaskType = "wait"
+		for idx, status := range m.mapNum {
+			if status == 0 || (status == 1 && time.Since(m.mapTime[idx]) > MaxTaskRuntime) {
+				reply.TaskType = "map"
+				reply.TaskNum = idx
+				reply.File = m.files[idx]
+				m.mapNum[idx] = 1 // set to assigned
+				m.mapTime[idx] = time.Now()
+				break
+			}
+		}
+	} else if !m.reduceFinished {
+		reply.TaskType = "wait"
+		for idx, status := range m.reduceNum {
+			if status == 1 && time.Since(m.reduceTime[idx]) > MaxTaskRuntime {
+				fmt.Println("Reduce Task timeout!")
+			}
+			if status == 0 || (status == 1 && time.Since(m.reduceTime[idx]) > MaxTaskRuntime) {
+				reply.TaskType = "reduce"
+				reply.TaskNum = idx
+				m.reduceNum[idx] = 1 // set to assigned
+				m.reduceTime[idx] = time.Now()
+				break
+			}
+		}
 	} else {
-		reply.TaskType = "Finished"
-		m.finished = true
+		reply.TaskType = "finished"
 	}
 	m.mu.Unlock()
 
@@ -51,11 +73,29 @@ func (m *Master) AssignTask(args *RequestTaskArgs, reply *TaskReply) error {
 }
 
 func (m *Master) FinishTask(returnVal *FinishTaskArgs, reply *MasterReply) error {
+	m.mu.Lock()
+	index := returnVal.TaskNum
 	if returnVal.TaskType == "map" {
-
-	} else {
-
+		m.mapNum[index] = 2
+		m.mapFinished = true
+		for _, status := range m.mapNum {
+			if status != 2 {
+				m.mapFinished = false
+				break
+			}
+		}
+	} else { // reduce
+		m.reduceNum[index] = 2
+		fmt.Println(index)
+		m.reduceFinished = true
+		for _, status := range m.reduceNum {
+			if status != 2 {
+				m.reduceFinished = false
+				break
+			}
+		}
 	}
+	m.mu.Unlock()
 	return nil
 }
 
@@ -81,8 +121,9 @@ func (m *Master) server() {
 //
 func (m *Master) Done() bool {
 	// Your code here.
-
-	return m.finished
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mapFinished && m.reduceFinished
 }
 
 //
@@ -92,15 +133,16 @@ func (m *Master) Done() bool {
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{
-		nReduce:   nReduce,
-		files:     files,
-		mapNum:    0,
-		reduceNum: 0,
-		// intermediates: make(map[int]map[string]void),
-		finished: false,
+		nReduce:        nReduce,
+		files:          files,
+		mapFinished:    false,
+		reduceFinished: false,
 	}
 
-	// Your code here.
+	m.mapNum = make([]int, len(files))
+	m.reduceNum = make([]int, nReduce)
+	m.mapTime = make([]time.Time, len(files))
+	m.reduceTime = make([]time.Time, nReduce)
 
 	m.server()
 	return &m

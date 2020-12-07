@@ -17,22 +17,24 @@ type RequestTaskArgs struct {
 	Free bool
 }
 
-type void struct{}
+// type void struct{}
 
 type FinishTaskArgs struct {
-	TaskType string
-	TaskNum  int
+	TaskType string // "map", "reduce"
+	TaskNum  int    // task index
 }
 
 type MasterReply struct {
 }
 
 type TaskReply struct {
-	NReduce  int
-	NMap     int
-	TaskNum  int
-	TaskType string
-	File     string
+	TaskType string // "map", "reduce", "finished", "wait"
+	TaskNum  int    // task index
+
+	NReduce int
+	NMap    int
+
+	File string // file for map task
 }
 
 // Cook up a unique-ish UNIX-domain socket name

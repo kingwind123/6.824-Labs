@@ -51,9 +51,10 @@ func Worker(mapf func(string, string) []KeyValue,
 	for {
 		working := RequestTask(mapf, reducef)
 		if !working {
+			// fmt.Println("Stop worker")
 			break
 		}
-		time.Sleep(time.Second)
+		// time.Sleep(time.Second)
 	}
 
 }
@@ -74,21 +75,33 @@ func mapTask(mapf func(string, string) []KeyValue, reply *TaskReply) {
 	var kva []KeyValue = mapf(filename, string(content))
 	mapNum := reply.TaskNum
 
+	bucketMap := make(map[int][]KeyValue)
+	for i := 0; i < reply.NReduce; i++ {
+		bucketMap[i] = make([]KeyValue, 0)
+	}
+
 	for _, kv := range kva {
 		reduceNum := ihash(kv.Key) % reply.NReduce
-		oname := fmt.Sprintf("./mr-out/mr-%d-%d", mapNum, reduceNum)
+		bucketMap[reduceNum] = append(bucketMap[reduceNum], kv)
+	}
 
-		// If the file doesn't exist, create it, or append to the file
-		f, err := os.OpenFile(oname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	for i := 0; i < reply.NReduce; i++ {
+		oname := fmt.Sprintf("mr-%d-%d", mapNum, i)
+
+		// Create creates or truncates the named file.
+		f, err := os.Create(oname)
 		if err != nil {
 			log.Fatalf("MapTask: cannot open %v", oname)
 		}
 
-		enc := json.NewEncoder(f)
-		err = enc.Encode(&kv)
-		if err != nil {
-			log.Fatal(err)
+		for _, kv := range bucketMap[i] {
+			enc := json.NewEncoder(f)
+			err = enc.Encode(&kv)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
+
 		f.Close()
 	}
 
@@ -103,7 +116,7 @@ func reduceTask(reducef func(string, []string) string, reply *TaskReply) {
 	intermediate := []KeyValue{}
 
 	for i := 0; i < mapNum; i++ {
-		oname := fmt.Sprintf("./mr-out/mr-%d-%d", i, reduceNum)
+		oname := fmt.Sprintf("mr-%d-%d", i, reduceNum)
 		if _, err := os.Stat(oname); err == nil {
 			file, err := os.Open(oname)
 			if err != nil {
@@ -117,13 +130,16 @@ func reduceTask(reducef func(string, []string) string, reply *TaskReply) {
 				}
 				intermediate = append(intermediate, kv)
 			}
+
 		}
 	}
 
 	sort.Sort(ByKey(intermediate))
 
-	outname := fmt.Sprintf("./mr-out/mr-out-%d", reduceNum)
-	ofile, _ := os.Create(outname)
+	tmpfile, err := ioutil.TempFile("./", "tmp*")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	//
 	// call Reduce on each distinct key in intermediate[],
@@ -142,12 +158,24 @@ func reduceTask(reducef func(string, []string) string, reply *TaskReply) {
 		output := reducef(intermediate[i].Key, values)
 
 		// this is the correct format for each line of Reduce output.
-		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+		fmt.Fprintf(tmpfile, "%v %v\n", intermediate[i].Key, output)
 
 		i = j
 	}
 
-	ofile.Close()
+	tmpfile.Close()
+	outname := fmt.Sprintf("mr-out-%d", reduceNum)
+	err = os.Rename(tmpfile.Name(), outname)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for i := 0; i < mapNum; i++ {
+		oname := fmt.Sprintf("mr-%d-%d", i, reduceNum)
+		err = os.Remove(oname)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	rt := FinishTaskArgs{TaskType: "reduce", TaskNum: reduceNum}
 	rp := MasterReply{}
@@ -161,34 +189,32 @@ func RequestTask(mapf func(string, string) []KeyValue,
 	args := RequestTaskArgs{Free: true}
 	reply := TaskReply{}
 
-	rt := call("Master.AssignTask", &args, &reply)
-	if !rt {
+	res := call("Master.AssignTask", &args, &reply)
+	if !res {
 		return false
 	}
-	fmt.Printf("%+v\n", reply)
+	// fmt.Printf("%+v\n", reply)
 
-	_, err := os.Stat("./mr-out")
+	// _, err := os.Stat("./mr-out")
 
-	if os.IsNotExist(err) {
-		errDir := os.MkdirAll("./mr-out", 0755)
-		if errDir != nil {
-			log.Fatal(errDir)
-		}
+	// if os.IsNotExist(err) {
+	// 	errDir := os.MkdirAll("./mr-out", 0755)
+	// 	if errDir != nil {
+	// 		log.Fatal(errDir)
+	// 	}
 
-	}
+	// }
 
 	if reply.TaskType == "map" {
 		mapTask(mapf, &reply)
 	} else if reply.TaskType == "reduce" {
 		reduceTask(reducef, &reply)
-	} else if reply.TaskType == "Finished" {
+	} else if reply.TaskType == "wait" {
+		time.Sleep(time.Second)
+	} else if reply.TaskType == "finished" {
 		return false
 	}
 	return true
-}
-
-func Finish() {
-
 }
 
 //
