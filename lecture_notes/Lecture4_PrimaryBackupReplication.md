@@ -1,4 +1,4 @@
-6.824 2020 Lecture 4: Primary/Backup Replication
+# 6.824 2020 Lecture 4: Primary/Backup Replication
 
 Today
   Primary/Backup Replication for Fault Tolerance
@@ -24,18 +24,18 @@ What kinds of failures can replication deal with?
 Is replication worth the Nx expense?
 
 Two main replication approaches:
-  State transfer
-    Primary replica executes the service
-    Primary sends [new] state to backups
-  Replicated state machine
-    Clients send operations to primary,
-      primary sequences and sends to backups
-    All replicas execute all operations
-    If same start state,
-      same operations,
-      same order,
-      deterministic,
-      then same end state.
+
+- State transfer
+      Primary replica executes the service
+      Primary sends [new] state to backups
+- Replicated state machine
+      Clients send operations to primary, primary sequences and sends to backups
+      All replicas execute all operations
+      If same start state,
+        same operations,
+        same order,
+        deterministic,
+        then same end state.
 
 State transfer is simpler
   But state may be large, slow to transfer over network
@@ -53,31 +53,34 @@ Big Questions:
   How to bring a replacement backup up to speed?
 
 At what level do we want replicas to be identical?
-  Application state, e.g. a database's tables?
-    GFS works this way
-    Can be efficient; primary only sends high-level operations to backup
-    Application code (server) must understand fault tolerance, to e.g. forward op stream
-  Machine level, e.g. registers and RAM content?
-    might allow us to replicate any existing server w/o modification!
-    requires forwarding of machine events (interrupts, DMA, &c)
-    requires "machine" modifications to send/recv event stream...
+
+- Application state, e.g. a database's tables?
+      GFS works this way
+      Can be efficient; primary only sends high-level operations to backup
+      Application code (server) must understand fault tolerance, to e.g. forward op stream
+- Machine level, e.g. registers and RAM content?
+      might allow us to replicate any existing server w/o modification!
+      requires forwarding of machine events (interrupts, DMA, &c)
+      requires "machine" modifications to send/recv event stream...
 
 Today's paper (VMware FT) replicates machine-level state
   Transparent: can run any existing O/S and server software!
   Appears like a single server to clients
 
-Overview
+### Overview
+
   [diagram: app, O/S, VM-FT underneath, disk server, network, clients]
   words:
     hypervisor == monitor == VMM (virtual machine monitor)
     O/S+app is the "guest" running inside a virtual machine
   two machines, primary and backup
-  primary sends all external events (client packets &c) to backup over network
-    "logging channel", carrying log entries
-  ordinarily, backup's output is suppressed by FT
-  if either stops being able to talk to the other over the network
-    "goes live" and provides sole service
-    if primary goes live, it stops sending log entries to the backup
+
+- primary sends all external events (client packets &c) to backup over network
+      "logging channel", carrying log entries
+- ordinarily, backup's output is suppressed by FT
+    if either stops being able to talk to the other over the network
+      "goes live" and provides sole service
+      if primary goes live, it stops sending log entries to the backup
 
 VMM emulates a local disk interface
   but actual storage is on a network server
@@ -86,21 +89,24 @@ VMM emulates a local disk interface
     if backup goes live, it talks to disk server
   external disk makes creating a new backup faster (don't have to copy primary's disk)
 
-When does the primary have to send information to the backup?
+##### When does the primary have to send information to the backup?
+
   Any time something happens that might cause their executions to diverge.
   Anything that's not a deterministic consequence of executing instructions.
 
-What sources of divergence must FT handle?
+##### What sources of divergence must FT handle?
+
   Most instructions execute identically on primary and backup.
-    As long as memory+registers are identical,
-      which we're assuming by induction.
+  	As long as memory+registers are identical,
+      	which we're assuming by induction.
   Inputs from external world -- just network packets.
-    These appear as DMA'd data plus an interrupt.
+  	These appear as DMA'd (Direct memory access) data plus an interrupt.
   Timing of interrupts.
   Instructions that aren't functions of state, such as reading current time.
   Not multi-core races, since uniprocessor only.
 
-Why would divergence be a disaster?
+##### Why would divergence be a disaster?
+
   b/c state on backup would differ from state on primary,
     and if primary then failed, clients would see inconsistency.
   Example: GFS lease expiration
@@ -119,9 +125,10 @@ Why would divergence be a disaster?
     in same order,
     at same points in instruction stream.
 
-Each log entry: instruction #, type, data.
+**Each log entry: instruction #, type, data.**
 
-FT's handling of timer interrupts
+##### FT's handling of timer interrupts
+
   Goal: primary and backup should see interrupt at 
         the same point in the instruction stream
   Primary:
@@ -136,7 +143,8 @@ FT's handling of timer interrupts
     FT tells CPU to interrupt (to FT) at instruction X
     FT mimics a timer interrupt to backup
 
-FT's handling of network packet arrival (input)
+##### FT's handling of network packet arrival (input)
+
   Primary:
     FT tells NIC to copy packet data into FT's private "bounce buffer"
     At some point NIC does DMA, then interrupts
@@ -155,7 +163,7 @@ Why the bounce buffer?
     execution of the primary and backup.
   Otherwise they may diverge.
 
-Note that the backup must lag by one one log entry
+**Note that the backup must lag by one one log entry**
   Suppose primary gets an interrupt, or input, after instruction X
   If backup has already executed past X, it cannot handle the input correctly
   So backup FT can't start executing at all until it sees the first log entry
