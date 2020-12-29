@@ -55,7 +55,7 @@ Big Questions:
 At what level do we want replicas to be identical?
 
 - Application state, e.g. a database's tables?
-      GFS works this way
+      **GFS works this way**
       Can be efficient; primary only sends high-level operations to backup
       Application code (server) must understand fault tolerance, to e.g. forward op stream
 - Machine level, e.g. registers and RAM content?
@@ -63,7 +63,7 @@ At what level do we want replicas to be identical?
       requires forwarding of machine events (interrupts, DMA, &c)
       requires "machine" modifications to send/recv event stream...
 
-Today's paper (VMware FT) replicates machine-level state
+Today's paper **(VMware FT) replicates machine-level state**
   Transparent: can run any existing O/S and server software!
   Appears like a single server to clients
 
@@ -73,7 +73,7 @@ Today's paper (VMware FT) replicates machine-level state
   words:
     hypervisor == monitor == VMM (virtual machine monitor)
     O/S+app is the "guest" running inside a virtual machine
-  two machines, primary and backup
+  two machines, **primary and backup**
 
 - primary sends all external events (client packets &c) to backup over network
       "logging channel", carrying log entries
@@ -129,8 +129,7 @@ VMM emulates a local disk interface
 
 ##### FT's handling of timer interrupts
 
-  Goal: primary and backup should see interrupt at 
-        the same point in the instruction stream
+  Goal: primary and backup should see interrupt at the same point in the instruction stream
   Primary:
     FT fields the timer interrupt
     FT reads instruction number from CPU
@@ -210,7 +209,8 @@ But wait:
     it will get "11" again, not "12"
   oops
 
-Solution: the Output Rule (Section 2.2)
+##### Solution: the Output Rule (Section 2.2)
+
   before primary sends output,
   must wait for backup to acknowledge all previous log entries
 
@@ -261,12 +261,12 @@ Duplicate output at cut-over is pretty common in replication systems
   Clients need to keep enough state to ignore duplicates
   Or be designed so that duplicates are harmless
 
-Q: Does FT cope with network partition -- could it suffer from split brain?
+Q: Does FT cope with network partition -- could it suffer from **split brain**?
    E.g. if primary and backup both think the other is down.
    Will they both go live?
 
 A: The disk server breaks the tie.
-   Disk server supports atomic test-and-set.
+   Disk server supports atomic **test-and-set**.
    If primary or backup thinks other is dead, attempts test-and-set.
    If only one is alive, it will win test-and-set and go live.
    If both try, one will lose, and halt.

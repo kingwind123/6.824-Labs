@@ -1,18 +1,19 @@
-6.824 2020 Lecture 2: Infrastructure: RPC and threads
+# 6.824 2020 Lecture 2: Infrastructure: RPC and threads
 
 Today:
   Threads and RPC in Go, with an eye towards the labs
 
 Why Go?
-  good support for threads
-  convenient RPC
-  type safe
-  garbage-collected (no use after freeing problems)
+  good support for **threads**
+  convenient **RPC**
+  **type safe**
+  **garbage-collected** (no use after freeing problems)
   threads + GC is particularly attractive!
   relatively simple
   After the tutorial, use https://golang.org/doc/effective_go.html
 
-Threads
+##### Threads
+
   a useful structuring tool, but can be tricky
   Go calls them goroutines; everyone else calls them threads
 
@@ -23,7 +24,8 @@ Thread = "thread of execution"
   each thread includes some per-thread state:
     program counter, registers, stack
 
-Why threads?
+##### Why threads?
+
   They express concurrency, which you need in distributed systems
   I/O concurrency
     Client sends requests to many servers in parallel and waits for replies.
@@ -48,19 +50,21 @@ Is there an alternative to threads?
     but doesn't get multi-core speedup,
     and is painful to program.
     
-Threading challenges:
-  shared data 
+
+##### Threading challenges:
+
+  **shared data** 
     e.g. what if two threads do n = n + 1 at the same time?
       or one thread reads while another increments?
     this is a "race" -- and is usually a bug
     -> use locks (Go's sync.Mutex)
     -> or avoid sharing mutable data
-  coordination between threads
+  **coordination between threads**
     e.g. one thread is producing data, another thread is consuming it
       how can the consumer wait (and release the CPU)?
       how can the producer wake up the consumer?
     -> use Go channels or sync.Cond or WaitGroup
-  deadlock
+  **deadlock**
     cycles via locks and/or communication (e.g. RPC or Go channels)
 
 Let's look at the tutorial's web crawler as a threading example.
@@ -71,7 +75,8 @@ What is a web crawler?
   multiple links to some pages
   graph has cycles
 
-Crawler challenges
+### Crawler challenges
+
   Exploit I/O concurrency
     Network latency is more limiting than network capacity
     Fetch many URLs at the same time
@@ -85,7 +90,8 @@ Crawler challenges
 
 We'll look at two styles of solution [crawler.go on schedule page]
 
-Serial crawler:
+##### Serial crawler:
+
   performs depth-first exploration via recursive Serial calls
   the "fetched" map avoids repeats, breaks cycles
     a single map, passed by reference, caller sees callee's updates
@@ -93,7 +99,8 @@ Serial crawler:
     can we just put a "go" in front of the Serial() call?
     let's try it... what happened?
 
-ConcurrentMutex crawler:
+##### ConcurrentMutex crawler:
+
   Creates a thread for each page fetch
     Many concurrent fetches, higher fetch rate
   the "go func" creates a goroutine and starts it running
@@ -119,14 +126,15 @@ ConcurrentMutex crawler:
       go run -race crawler.go
         Detects races even when output is correct!
   How does the ConcurrentMutex crawler decide it is done?
-    sync.WaitGroup
+    **sync.WaitGroup**
     Wait() waits for all Add()s to be balanced by Done()s
       i.e. waits for all child threads to finish
     [diagram: tree of goroutines, overlaid on cyclic URL graph]
     there's a WaitGroup per node in the tree
   How many concurrent threads might this crawler create?
 
-ConcurrentChannel crawler
+##### ConcurrentChannel crawler
+
   a Go channel:
     a channel is an object
       ch := make(chan int)
@@ -136,11 +144,11 @@ ConcurrentChannel crawler
     y := <- ch
       for y := range ch
       a receiver waits until some goroutine sends
-    channels both communicate and synchronize
+    **channels both communicate and synchronize**
     several threads can send and receive on a channel
     channels are cheap
-    remember: sender blocks until the receiver receives!
-      "synchronous"
+    remember: **sender blocks until the receiver receives!**
+      "**synchronous**"
       watch out for deadlock
   ConcurrentChannel master()
     master() creates a worker goroutine to fetch each page
@@ -156,21 +164,23 @@ ConcurrentChannel crawler
 
 Why is it not a race that multiple threads use the same channel?
 
-Is there a race when worker thread writes into a slice of URLs,
-  and master thread reads that slice, without locking?
+###### Is there a race when worker thread writes into a slice of URLs, and master thread reads that slice, without locking?
+
   * worker only writes slice *before* sending
   * master only reads slice *after* receiving
     So they can't use the slice at the same time.
 
-When to use sharing and locks, versus channels?
+##### When to use sharing and locks, versus channels?
+
   Most problems can be solved in either style
   What makes the most sense depends on how the programmer thinks
-    state -- sharing and locks
-    communication -- channels
+    **state -- sharing and locks**
+    **communication -- channels**
   For the 6.824 labs, I recommend sharing+locks for state,
     and sync.Cond or channels or time.Sleep() for waiting/notification.
 
-Remote Procedure Call (RPC)
+### Remote Procedure Call (RPC)
+
   a key piece of distributed system machinery; all the labs use RPC
   goal: easy-to-program client/server communication
   hide details of network protocols
