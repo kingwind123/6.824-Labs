@@ -180,7 +180,7 @@ Example: non-deterministic instructions
     FT reads log entry, sets up for interrupt at instruction #
     FT then supplies value that the primary got
 
-What about output (sending network packets)?
+What about <u>output</u> (sending network packets)?
   Primary and backup both execute instructions for output
   Primary's FT actually does the output
   Backup's FT discards the output
@@ -277,7 +277,8 @@ The disk server may be a single point of failure
 
 Q: Why don't they support multi-core?
 
-Performance (table 1)
+##### Performance (table 1)
+
   FT/Non-FT: impressive!
     little slow down
   Logging bandwidth
@@ -298,7 +299,8 @@ What about replication for high-throughput services?
   Result: less fine-grained synchronization, less overhead.
   GFS use application-level replication, as do Lab 2 &c
 
-Summary:
+##### Summary:
+
   Primary-backup replication
     VM-FT: clean example
   How to cope with partition without single point of failure?
