@@ -11,10 +11,10 @@ a pattern in the fault-tolerant systems we've seen
 
   * VMware FT replicates service but relies on test-and-set to pick primary
     
-    <u>all rely on a single entity to make critical decisions</u>
-    nice: decisions by a single entity avoid split brain
+    <u>All rely on a single entity to make critical decisions</u>
+    nice: decisions by a single entity **avoid split brain**
 
-how coulds split brain arise, and why is it damaging?
+how could split brain arise, and why is it damaging?
   suppose we're replicating a test-and-set service
     the client request sets the state to 1, server replies w/ previous state
     only one client should get a reply with "0" !!!
@@ -31,7 +31,7 @@ how coulds split brain arise, and why is it damaging?
     either no ability to tolerate faults, despite replication, or
     the possibility of incorrect operation due to split brain
 
-the problem: computers cannot distinguish "server crashed" vs "network broken"
+the problem: <u>computers cannot distinguish "server crashed" vs "network broken"</u>
   the symptom is the same: no response to a query over the network
   the bad situation is often called "network partition":
     C1 can talk to S1, C2 can talk to S2,
@@ -43,19 +43,19 @@ the problem: computers cannot distinguish "server crashed" vs "network broken"
   BUT these are all single points of failure -- not desirable
   can one do better?
 
-The big insight for coping w/ partition: majority vote
+The big insight for coping w/ partition: **majority vote**
   require an odd number of servers, e.g. 3
   agreement from a majority is required to do anything -- 2 out of 3
   why does majority help avoid split brain?
-    at most one partition can have a majority
+    **at most one partition can have a majority**
     breaks the symmetry we saw with just two servers
-  note: majority is out of all servers, not just out of live ones
-  more generally 2f+1 can tolerate f failed servers
+  <u>note: majority is out of all servers, not just out of live ones</u>
+  <u>more generally 2f+1 can tolerate f failed servers</u>
     since the remaining f+1 is a majority of 2f+1
     if more than f fail (or can't be contacted), no progress
-  often called "quorum" systems
+  often called "**quorum**" systems
 
-a key property of majorities is that any two must intersect
+**a key property of majorities is that any two must intersect**
   e.g. successive majorities for Raft leader election must overlap
   and the intersection can convey information about previous decisions
 
@@ -64,7 +64,7 @@ Two partition-tolerant replication schemes were invented around 1990,
   in the last 15 years this technology has seen a lot of real-world use
   the Raft paper is a good introduction to modern techniques
 
-*** topic: Raft overview
+### topic: Raft overview
 
 state machine replication with Raft -- Lab 3 as example:
   [diagram: clients, 3 replicas, k/v layer + state, raft layer + logs]
@@ -74,7 +74,7 @@ time diagram of one client command
   [C, L, F1, F2]
   client sends Put/Get "command" to k/v layer in leader
   leader adds command to log
-  leader sends AppendEntries RPCs to followers
+  leader sends **AppendEntries** RPCs to followers
   followers add command to log
   leader waits for replies from a bare majority (including itself)
   entry is "committed" if a majority put it in their logs
@@ -101,7 +101,8 @@ are the servers' logs exact replicas of each other?
     they'll eventually converge to be identical
     the commit mechanism ensures servers only execute stable entries
 
-lab 2 Raft interface
+#### lab 2 Raft interface
+
   rf.Start(command) (index, term, isleader)
     Lab 3 k/v server's Put()/Get() RPC handlers call Start()
     Start() only makes sense on the leader
@@ -124,7 +125,7 @@ there are two main parts to Raft's design:
   electing a new leader
   ensuring identical logs despite failures
 
-*** topic: leader election (Lab 2A)
+### topic: leader election (Lab 2A)
 
 why a leader?
   ensures all replicas execute the same commands, in the same order
@@ -135,13 +136,15 @@ Raft numbers the sequence of leaders
   a term has at most one leader; might have no leader
   the numbering helps servers follow latest leader, not superseded leader
 
-when does a Raft peer start a leader election?
+##### when does a Raft peer start a leader election?
+
   when it doesn't hear from current leader for an "election timeout"
   increments local currentTerm, tries to collect votes
   note: this can lead to un-needed elections; that's slow but safe
   note: old leader may still be alive and think it is the leader
 
-how to ensure at most one leader in a term?
+##### how to ensure at most one leader in a term?
+
   (Figure 2 RequestVote RPC and Rules for Servers)
   leader must get "yes" votes from a majority of servers
   each server can cast only one vote per term
@@ -151,7 +154,8 @@ how to ensure at most one leader in a term?
     -> at most one leader even if network partition
     -> election can succeed even if some servers have failed
 
-how does a server learn about newly elected leader?
+##### how does a server learn about newly elected leader?
+
   new leader sees yes votes from majority
   others see AppendEntries heart-beats with a higher term number
     i.e. from the new leader
@@ -165,7 +169,8 @@ what happens if an election doesn't succeed?
   another timeout (no heartbeat), a new election (and new term)
   higher term takes precedence, candidates for older terms quit
 
-how does Raft avoid split votes?
+##### how does Raft avoid split votes?
+
   each server picks a random election timeout
   [diagram of times at which servers' timeouts expire]
   randomness breaks symmetry among the servers
@@ -175,7 +180,8 @@ how does Raft avoid split votes?
     not become candidates
   randomized delays are a common pattern in network protocols
 
-how to choose the election timeout?
+##### how to choose the election timeout?
+
   * at least a few heartbeat intervals (in case network drops a heartbeat)
     to avoid needless elections, which waste time
   * random part long enough to let one candidate succeed before next starts
@@ -183,7 +189,8 @@ how to choose the election timeout?
   * short enough to allow a few re-tries before tester gets upset
     tester requires election to complete in 5 seconds or less
 
-what if old leader isn't aware a new leader is elected?
+##### what if old leader isn't aware a new leader is elected?
+
   perhaps old leader didn't see election messages
   perhaps old leader is in a minority network partition
   new leader means a majority of servers have incremented currentTerm

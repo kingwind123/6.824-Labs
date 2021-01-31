@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -54,7 +53,7 @@ func (m *Master) AssignTask(args *RequestTaskArgs, reply *TaskReply) error {
 		reply.TaskType = "wait"
 		for idx, status := range m.reduceNum {
 			if status == 1 && time.Since(m.reduceTime[idx]) > MaxTaskRuntime {
-				fmt.Println("Reduce Task timeout!")
+				// fmt.Println("Reduce Task timeout!")
 			}
 			if status == 0 || (status == 1 && time.Since(m.reduceTime[idx]) > MaxTaskRuntime) {
 				reply.TaskType = "reduce"
@@ -86,7 +85,7 @@ func (m *Master) FinishTask(returnVal *FinishTaskArgs, reply *MasterReply) error
 		}
 	} else { // reduce
 		m.reduceNum[index] = 2
-		fmt.Println(index)
+		// fmt.Println(index)
 		m.reduceFinished = true
 		for _, status := range m.reduceNum {
 			if status != 2 {
